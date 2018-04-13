@@ -19,28 +19,28 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/echo/v1alpha1"
+	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/tinyop/v1alpha1"
 	"github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned/scheme"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	rest "k8s.io/client-go/rest"
 )
 
-type EchoV1alpha1Interface interface {
+type TinyopV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	EchoServersGetter
 }
 
-// EchoV1alpha1Client is used to interact with features provided by the echo group.
-type EchoV1alpha1Client struct {
+// TinyopV1alpha1Client is used to interact with features provided by the tinyop.objectrocket.com group.
+type TinyopV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *EchoV1alpha1Client) EchoServers(namespace string) EchoServerInterface {
+func (c *TinyopV1alpha1Client) EchoServers(namespace string) EchoServerInterface {
 	return newEchoServers(c, namespace)
 }
 
-// NewForConfig creates a new EchoV1alpha1Client for the given config.
-func NewForConfig(c *rest.Config) (*EchoV1alpha1Client, error) {
+// NewForConfig creates a new TinyopV1alpha1Client for the given config.
+func NewForConfig(c *rest.Config) (*TinyopV1alpha1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -49,12 +49,12 @@ func NewForConfig(c *rest.Config) (*EchoV1alpha1Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &EchoV1alpha1Client{client}, nil
+	return &TinyopV1alpha1Client{client}, nil
 }
 
-// NewForConfigOrDie creates a new EchoV1alpha1Client for the given config and
+// NewForConfigOrDie creates a new TinyopV1alpha1Client for the given config and
 // panics if there is an error in the config.
-func NewForConfigOrDie(c *rest.Config) *EchoV1alpha1Client {
+func NewForConfigOrDie(c *rest.Config) *TinyopV1alpha1Client {
 	client, err := NewForConfig(c)
 	if err != nil {
 		panic(err)
@@ -62,9 +62,9 @@ func NewForConfigOrDie(c *rest.Config) *EchoV1alpha1Client {
 	return client
 }
 
-// New creates a new EchoV1alpha1Client for the given RESTClient.
-func New(c rest.Interface) *EchoV1alpha1Client {
-	return &EchoV1alpha1Client{c}
+// New creates a new TinyopV1alpha1Client for the given RESTClient.
+func New(c rest.Interface) *TinyopV1alpha1Client {
+	return &TinyopV1alpha1Client{c}
 }
 
 func setConfigDefaults(config *rest.Config) error {
@@ -82,7 +82,7 @@ func setConfigDefaults(config *rest.Config) error {
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *EchoV1alpha1Client) RESTClient() rest.Interface {
+func (c *TinyopV1alpha1Client) RESTClient() rest.Interface {
 	if c == nil {
 		return nil
 	}

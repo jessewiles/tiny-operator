@@ -19,7 +19,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/echo/v1alpha1"
+	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/tinyop/v1alpha1"
 	scheme "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
@@ -53,7 +53,7 @@ type echoServers struct {
 }
 
 // newEchoServers returns a EchoServers
-func newEchoServers(c *EchoV1alpha1Client, namespace string) *echoServers {
+func newEchoServers(c *TinyopV1alpha1Client, namespace string) *echoServers {
 	return &echoServers{
 		client: c.RESTClient(),
 		ns:     namespace,

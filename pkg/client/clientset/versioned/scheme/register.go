@@ -19,7 +19,7 @@ limitations under the License.
 package scheme
 
 import (
-	echov1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/echo/v1alpha1"
+	tinyopv1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/tinyop/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -50,5 +50,5 @@ func init() {
 // After this, RawExtensions in Kubernetes types will serialize kube-aggregator types
 // correctly.
 func AddToScheme(scheme *runtime.Scheme) {
-	echov1alpha1.AddToScheme(scheme)
+	tinyopv1alpha1.AddToScheme(scheme)
 }

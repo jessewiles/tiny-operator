@@ -20,8 +20,8 @@ package fake
 
 import (
 	clientset "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned"
-	echov1alpha1 "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned/typed/echo/v1alpha1"
-	fakeechov1alpha1 "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned/typed/echo/v1alpha1/fake"
+	tinyopv1alpha1 "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned/typed/tinyop/v1alpha1"
+	faketinyopv1alpha1 "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned/typed/tinyop/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -70,12 +70,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// EchoV1alpha1 retrieves the EchoV1alpha1Client
-func (c *Clientset) EchoV1alpha1() echov1alpha1.EchoV1alpha1Interface {
-	return &fakeechov1alpha1.FakeEchoV1alpha1{Fake: &c.Fake}
+// TinyopV1alpha1 retrieves the TinyopV1alpha1Client
+func (c *Clientset) TinyopV1alpha1() tinyopv1alpha1.TinyopV1alpha1Interface {
+	return &faketinyopv1alpha1.FakeTinyopV1alpha1{Fake: &c.Fake}
 }
 
-// Echo retrieves the EchoV1alpha1Client
-func (c *Clientset) Echo() echov1alpha1.EchoV1alpha1Interface {
-	return &fakeechov1alpha1.FakeEchoV1alpha1{Fake: &c.Fake}
+// Tinyop retrieves the TinyopV1alpha1Client
+func (c *Clientset) Tinyop() tinyopv1alpha1.TinyopV1alpha1Interface {
+	return &faketinyopv1alpha1.FakeTinyopV1alpha1{Fake: &c.Fake}
 }

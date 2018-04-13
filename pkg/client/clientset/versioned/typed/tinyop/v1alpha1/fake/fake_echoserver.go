@@ -19,7 +19,7 @@ limitations under the License.
 package fake
 
 import (
-	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/echo/v1alpha1"
+	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/tinyop/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -30,13 +30,13 @@ import (
 
 // FakeEchoServers implements EchoServerInterface
 type FakeEchoServers struct {
-	Fake *FakeEchoV1alpha1
+	Fake *FakeTinyopV1alpha1
 	ns   string
 }
 
-var echoserversResource = schema.GroupVersionResource{Group: "echo", Version: "v1alpha1", Resource: "echoservers"}
+var echoserversResource = schema.GroupVersionResource{Group: "tinyop.objectrocket.com", Version: "v1alpha1", Resource: "echoservers"}
 
-var echoserversKind = schema.GroupVersionKind{Group: "echo", Version: "v1alpha1", Kind: "EchoServer"}
+var echoserversKind = schema.GroupVersionKind{Group: "tinyop.objectrocket.com", Version: "v1alpha1", Kind: "EchoServer"}
 
 // Get takes name of the echoServer, and returns the corresponding echoServer object, and an error if there is any.
 func (c *FakeEchoServers) Get(name string, options v1.GetOptions) (result *v1alpha1.EchoServer, err error) {

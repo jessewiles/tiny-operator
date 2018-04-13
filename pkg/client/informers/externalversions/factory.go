@@ -24,8 +24,8 @@ import (
 	time "time"
 
 	versioned "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned"
-	echo "github.com/objectrocket/tiny-operator/pkg/client/informers/externalversions/echo"
 	internalinterfaces "github.com/objectrocket/tiny-operator/pkg/client/informers/externalversions/internalinterfaces"
+	tinyop "github.com/objectrocket/tiny-operator/pkg/client/informers/externalversions/tinyop"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -123,9 +123,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Echo() echo.Interface
+	Tinyop() tinyop.Interface
 }
 
-func (f *sharedInformerFactory) Echo() echo.Interface {
-	return echo.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Tinyop() tinyop.Interface {
+	return tinyop.New(f, f.namespace, f.tweakListOptions)
 }

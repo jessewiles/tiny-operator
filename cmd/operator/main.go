@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/heptiolabs/healthcheck"
+	clientset "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned"
 	"k8s.io/api/core/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/fields"

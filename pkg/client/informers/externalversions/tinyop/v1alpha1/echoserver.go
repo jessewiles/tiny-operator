@@ -21,10 +21,10 @@ package v1alpha1
 import (
 	time "time"
 
-	echo_v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/echo/v1alpha1"
+	tinyop_v1alpha1 "github.com/objectrocket/tiny-operator/pkg/apis/tinyop/v1alpha1"
 	versioned "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/objectrocket/tiny-operator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/client/listers/echo/v1alpha1"
+	v1alpha1 "github.com/objectrocket/tiny-operator/pkg/client/listers/tinyop/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -61,16 +61,16 @@ func NewFilteredEchoServerInformer(client versioned.Interface, namespace string,
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.EchoV1alpha1().EchoServers(namespace).List(options)
+				return client.TinyopV1alpha1().EchoServers(namespace).List(options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.EchoV1alpha1().EchoServers(namespace).Watch(options)
+				return client.TinyopV1alpha1().EchoServers(namespace).Watch(options)
 			},
 		},
-		&echo_v1alpha1.EchoServer{},
+		&tinyop_v1alpha1.EchoServer{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,7 +81,7 @@ func (f *echoServerInformer) defaultInformer(client versioned.Interface, resyncP
 }
 
 func (f *echoServerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&echo_v1alpha1.EchoServer{}, f.defaultInformer)
+	return f.factory.InformerFor(&tinyop_v1alpha1.EchoServer{}, f.defaultInformer)
 }
 
 func (f *echoServerInformer) Lister() v1alpha1.EchoServerLister {
