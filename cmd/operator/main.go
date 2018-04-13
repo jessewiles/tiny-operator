@@ -3,14 +3,20 @@ package main
 import (
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/heptiolabs/healthcheck"
+	tinyop "github.com/objectrocket/tiny-operator/pkg/apis/tinyop"
+	tinyopv1 "github.com/objectrocket/tiny-operator/pkg/apis/tinyop/v1alpha1"
 	clientset "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"k8s.io/api/core/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/fields"
@@ -20,6 +26,13 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+var (
+	appVersion  = "0.0.1"
+	kubeCfgFile string
+	image       string
+	eLock       = &sync.Mutex{}
+)
+
 func init() {
 	flag.StringVar(&kubeCfgFile, "kubecfg-file", "", "location of kubecfg file")
 	flag.StringVar(&image, "image", "jessewiles/echo-chamber:0.1", "docker image to run")
@@ -27,12 +40,23 @@ func init() {
 }
 
 func main() {
+	// Setup and start the operator server process
+	// Prometheus and health checks
+	r := prometheus.NewRegistry()
+	r.MustRegister(prometheus.NewProcessCollector(os.Getpid(), ""))
+	r.MustRegister(prometheus.NewGoCollector())
+
 	health := healthcheck.NewMetricsHandler(r, "tiny-operator")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/live", health.LiveEndpoint)
 	mux.HandleFunc("/ready", health.ReadyEndpoint)
 
 	srv := &http.Server{Handler: mux}
+	l, err := net.Listen("tcp", ":8000")
+	if err != nil {
+		log.Fatal(err)
+	}
+	go srv.Serve(l)
 
 	doneChan := make(chan struct{})
 	var wg sync.WaitGroup
@@ -42,9 +66,9 @@ func main() {
 	for {
 		select {
 		case <-signalChan:
-			log.Error("Received shutdown signal...")
+			log.Fatal("Received shutdown signal...")
 			close(doneChan)
-			wg.W()
+			wg.Wait()
 			os.Exit(0)
 		}
 	}
@@ -57,18 +81,28 @@ type Agent struct {
 	kubeExt   apiextensionsclient.Interface
 }
 
-func newAgent(kubeCfgFile) (Agent, error) {
+func newAgent(kubeCfgFile string) (*Agent, error) {
+	var (
+		config *rest.Config
+		err    error
+	)
 	if kubeCfgFile != "" {
-		log.Infof("Using OutOfCluster k8s config with kubeConfigFile: %s", kubeCfgFile)
-		config, err := clientcmd.BuildConfigFromFlags("", kubeCfgFile)
+		log.Printf("Using OutOfCluster k8s config with kubeConfigFile: %s", kubeCfgFile)
+		config, err = clientcmd.BuildConfigFromFlags("", kubeCfgFile)
 		if err != nil {
 			panic(err.Error())
 		}
 	} else {
-		config := rest.InClusterConfig()
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			panic(err.Error())
+		}
 	}
 
-	// TODO (jwiles): client for generated clientset
+	crdClient, err := clientset.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
 
 	kclient, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -82,51 +116,56 @@ func newAgent(kubeCfgFile) (Agent, error) {
 
 	return &Agent{
 		config:    config,
-		crdClient: nil,
+		crdClient: crdClient,
 		kclient:   kclient,
 		kubeExt:   kubeExt,
-	}
+	}, nil
 }
 
 func initOperator(doneChan chan struct{}, wg *sync.WaitGroup) error {
-	err := createCRD()
+	agent, err := newAgent(kubeCfgFile)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	err = createCRD()
 	if err != nil {
 		return err
 	}
 
 	wg.Add(1)
-	watchEchoEvents(doneChan, wg)
+	watchEchoEvents(doneChan, wg, agent.crdClient)
 
 	return nil
 }
 
-func monitorEchoEvents(shopchan chan struct{}) (<-chan *echo.EchoServer, <-chan error) {
-	events := make(chan *echo.EchoServer)
+func monitorEchoEvents(stopchan chan struct{}, crdClient clientset.Interface) (<-chan *tinyopv1.EchoServer, <-chan error) {
+	events := make(chan *tinyopv1.EchoServer)
 	errc := make(chan error, 1)
 
-	source := cache.NewListWatchFromClient(crdClient.EchoV1Alpha1().RESTClient(), echo.ResourcePlural, v1.NamespaceAll, fields.Everything())
+	source := cache.NewListWatchFromClient(crdClient.TinyopV1alpha1().RESTClient(), tinyop.ResourcePlural, v1.NamespaceAll, fields.Everything())
 
 	createHandler := func(obj interface{}) {
-		event := obj.(*echo.EchoServer)
+		event := obj.(*tinyopv1.EchoServer)
 		event.Type = "ADDED"
 		events <- event
 	}
 
 	deleteHandler := func(obj interface{}) {
-		event := obj.(*echo.EchoServer)
+		event := obj.(*tinyopv1.EchoServer)
 		event.Type = "DELETED"
 		events <- event
 	}
 
 	updateHandler := func(old interface{}, obj interface{}) {
-		event := obj.(*echo.EchoServer)
+		event := obj.(*tinyopv1.EchoServer)
 		event.Type = "MODIFIED"
 		events <- event
 	}
 
 	_, controller := cache.NewInformer(
 		source,
-		&echo.EchoServer{},
+		&tinyopv1.EchoServer{},
 		time.Minute*60,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    createHandler,
@@ -139,18 +178,18 @@ func monitorEchoEvents(shopchan chan struct{}) (<-chan *echo.EchoServer, <-chan 
 	return events, errc
 }
 
-func watchEchoEvents(done chan struct{}, wg *sync.WaitGroup) {
-	events, watchErrs := monitorEchoEvents(done)
+func watchEchoEvents(done chan struct{}, wg *sync.WaitGroup, crdClient clientset.Interface) {
+	events, watchErrs := monitorEchoEvents(done, crdClient)
 	go func() {
 		for {
 			select {
 			case event := <-events:
 				err := handleEchoEvent(event)
 				if err != nil {
-					log.Error(err)
+					log.Fatal(err)
 				}
 			case err := <-watchErrs:
-				log.Error(err)
+				log.Fatal(err)
 			case <-done:
 				wg.Done()
 				return
@@ -159,7 +198,11 @@ func watchEchoEvents(done chan struct{}, wg *sync.WaitGroup) {
 	}()
 }
 
-func handleEchoEvent(e *echo.EchoServer) error {
+func createCRD() error {
+	return nil
+}
+
+func handleEchoEvent(e *tinyopv1.EchoServer) error {
 	eLock.Lock()
 	defer eLock.Unlock()
 	switch {
@@ -168,14 +211,15 @@ func handleEchoEvent(e *echo.EchoServer) error {
 	case e.Type == "DELETED":
 		return onDeleteEcho(e)
 	}
-}
-
-func onApplyEcho(e *echo.EchoServer) error {
-	log.Infof("Received create event with object: %#v", e)
 	return nil
 }
 
-func onDeleteEcho(e *echo.EchoServer) error {
-	log.Infof("Received delete event with object: %#v", e)
+func onApplyEcho(e *tinyopv1.EchoServer) error {
+	log.Printf("Received create event with object: %#v", e)
+	return nil
+}
+
+func onDeleteEcho(e *tinyopv1.EchoServer) error {
+	log.Printf("Received delete event with object: %#v", e)
 	return nil
 }

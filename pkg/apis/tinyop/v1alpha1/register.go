@@ -22,7 +22,7 @@ import (
 )
 
 // SchemeGroupVersion is group version used to register these objects
-var SchemeGroupVersion = schema.GroupVersion{Group: esoperator.GroupName, Version: esoperator.Version}
+var SchemeGroupVersion = schema.GroupVersion{Group: tinyop.GroupName, Version: tinyop.Version}
 
 // Resource takes an unqualified resource and returns a Group qualified GroupResource
 func Resource(resource string) schema.GroupResource {
