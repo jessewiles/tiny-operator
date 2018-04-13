@@ -1,0 +1,23 @@
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: one.echo.objectrocket.com
+spec:
+  group: echo.objectrocket.com
+  version: v1alpha1
+  names:
+    kind: Echo
+    plural: echoes
+  scope: Namespaced
+  validataion:
+    openAPIV3Schema:
+      properties:
+        spec:
+          required:
+            - containerImage
+          properties:
+            containerImage:
+              type: string
+              description: The image identifier that the operator should launch
+
