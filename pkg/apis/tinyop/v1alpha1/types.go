@@ -25,6 +25,9 @@ type EchoServerList struct {
 }
 
 type EchoServerSpec struct {
+	// Image is the docker tag of the echo server
+	Image string `json:"image"`
+
 	// Replicas is the number of EchoServer replicas k8s should maintain
 	Replicas int32 `json:"replicas"`
 }

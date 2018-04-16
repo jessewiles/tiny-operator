@@ -35,13 +35,11 @@ import (
 var (
 	appVersion  = "0.0.1"
 	kubeCfgFile string
-	image       string
 	eLock       = &sync.Mutex{}
 )
 
 func init() {
 	flag.StringVar(&kubeCfgFile, "kubecfg-file", "", "location of kubecfg file")
-	flag.StringVar(&image, "image", "jessewiles/echo-chamber:0.1", "docker image to run")
 	flag.Parse()
 }
 
@@ -145,16 +143,16 @@ func initOperator(doneChan chan struct{}, wg *sync.WaitGroup) error {
 	}
 
 	wg.Add(1)
-	watchEchoEvents(doneChan, wg, agent.crdClient)
+	watchEchoEvents(doneChan, wg, agent)
 
 	return nil
 }
 
-func monitorEchoEvents(stopchan chan struct{}, crdClient clientset.Interface) (<-chan *tinyopv1.EchoServer, <-chan error) {
+func monitorEchoEvents(stopchan chan struct{}, a *Agent) (<-chan *tinyopv1.EchoServer, <-chan error) {
 	events := make(chan *tinyopv1.EchoServer)
 	errc := make(chan error, 1)
 
-	source := cache.NewListWatchFromClient(crdClient.TinyopV1alpha1().RESTClient(), tinyop.ResourcePlural, v1.NamespaceAll, fields.Everything())
+	source := cache.NewListWatchFromClient(a.crdClient.TinyopV1alpha1().RESTClient(), tinyop.ResourcePlural, v1.NamespaceAll, fields.Everything())
 
 	createHandler := func(obj interface{}) {
 		event := obj.(*tinyopv1.EchoServer)
@@ -189,13 +187,13 @@ func monitorEchoEvents(stopchan chan struct{}, crdClient clientset.Interface) (<
 	return events, errc
 }
 
-func watchEchoEvents(done chan struct{}, wg *sync.WaitGroup, crdClient clientset.Interface) {
-	events, watchErrs := monitorEchoEvents(done, crdClient)
+func watchEchoEvents(done chan struct{}, wg *sync.WaitGroup, a *Agent) {
+	events, watchErrs := monitorEchoEvents(done, a)
 	go func() {
 		for {
 			select {
 			case event := <-events:
-				err := handleEchoEvent(event)
+				err := handleEchoEvent(event, a)
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -214,9 +212,7 @@ func createCRD(kubeExt apiextensionsclient.Interface) error {
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			crdObject := &apiextensionsv1beta1.CustomResourceDefinition{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: tinyop.Name,
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: tinyop.Name},
 				Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
 					Group:   tinyop.GroupName,
 					Version: tinyop.Version,
@@ -274,24 +270,24 @@ func createCRD(kubeExt apiextensionsclient.Interface) error {
 	return nil
 }
 
-func handleEchoEvent(e *tinyopv1.EchoServer) error {
+func handleEchoEvent(e *tinyopv1.EchoServer, a *Agent) error {
 	eLock.Lock()
 	defer eLock.Unlock()
 	switch {
 	case e.Type == "ADDED" || e.Type == "MODIFIED":
-		return onApplyEcho(e)
+		return onApplyEcho(e, a)
 	case e.Type == "DELETED":
-		return onDeleteEcho(e)
+		return onDeleteEcho(e, a)
 	}
 	return nil
 }
 
-func onApplyEcho(e *tinyopv1.EchoServer) error {
+func onApplyEcho(e *tinyopv1.EchoServer, a *Agent) error {
 	log.Printf("Received create event with object: %#v", e)
 	return nil
 }
 
-func onDeleteEcho(e *tinyopv1.EchoServer) error {
+func onDeleteEcho(e *tinyopv1.EchoServer, a *Agent) error {
 	log.Printf("Received delete event with object: %#v", e)
 	return nil
 }
