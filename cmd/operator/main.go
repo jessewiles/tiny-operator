@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -18,8 +19,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"k8s.io/api/core/v1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -60,6 +66,11 @@ func main() {
 
 	doneChan := make(chan struct{})
 	var wg sync.WaitGroup
+
+	err = initOperator(doneChan, &wg)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
@@ -128,7 +139,7 @@ func initOperator(doneChan chan struct{}, wg *sync.WaitGroup) error {
 		panic(err.Error())
 	}
 
-	err = createCRD()
+	err = createCRD(agent.kubeExt)
 	if err != nil {
 		return err
 	}
@@ -198,7 +209,68 @@ func watchEchoEvents(done chan struct{}, wg *sync.WaitGroup, crdClient clientset
 	}()
 }
 
-func createCRD() error {
+func createCRD(kubeExt apiextensionsclient.Interface) error {
+	crd, err := kubeExt.ApiextensionsV1beta1().CustomResourceDefinitions().Get(tinyop.Name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			crdObject := &apiextensionsv1beta1.CustomResourceDefinition{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tinyop.Name,
+				},
+				Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
+					Group:   tinyop.GroupName,
+					Version: tinyop.Version,
+					Scope:   apiextensionsv1beta1.NamespaceScoped,
+					Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
+						Plural: tinyop.ResourcePlural,
+						Kind:   tinyop.ResourceKind,
+					},
+				},
+			}
+
+			_, err := kubeExt.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crdObject)
+			if err != nil {
+				panic(err)
+			}
+			log.Print("Initialized CRD...waiting for K8s system to acknowledge...")
+
+			// wait for CRD being established
+			err = wait.Poll(500*time.Millisecond, 60*time.Second, func() (bool, error) {
+				createdCRD, err := kubeExt.ApiextensionsV1beta1().CustomResourceDefinitions().Get(tinyop.Name, metav1.GetOptions{})
+				if err != nil {
+					return false, err
+				}
+				for _, cond := range createdCRD.Status.Conditions {
+					switch cond.Type {
+					case apiextensionsv1beta1.Established:
+						if cond.Status == apiextensionsv1beta1.ConditionTrue {
+							return true, nil
+						}
+					case apiextensionsv1beta1.NamesAccepted:
+						if cond.Status == apiextensionsv1beta1.ConditionFalse {
+							return false, fmt.Errorf("Name conflict: %v", cond.Reason)
+						}
+					}
+				}
+				return false, nil
+			})
+
+			if err != nil {
+				deleteErr := kubeExt.ApiextensionsV1beta1().CustomResourceDefinitions().Delete(tinyop.Name, nil)
+				if deleteErr != nil {
+					return errors.NewAggregate([]error{err, deleteErr})
+				}
+				return err
+			}
+
+			log.Print("CRD is alive.")
+		} else {
+			panic(err)
+		}
+	} else {
+		log.Printf("Elasticsearch CRD already exists %#v\n", crd.ObjectMeta.Name)
+	}
+
 	return nil
 }
 
