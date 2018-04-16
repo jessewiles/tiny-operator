@@ -1,0 +1,6 @@
+apiVersion: tinyop.objectrocket.com/v1alpha1
+kind: EchoServer
+metadata:
+  name: some-echo-server
+spec:
+  replicas: 1

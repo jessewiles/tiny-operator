@@ -268,7 +268,7 @@ func createCRD(kubeExt apiextensionsclient.Interface) error {
 			panic(err)
 		}
 	} else {
-		log.Printf("Elasticsearch CRD already exists %#v\n", crd.ObjectMeta.Name)
+		log.Printf("CRD already exists %#v\n", crd.ObjectMeta.Name)
 	}
 
 	return nil
