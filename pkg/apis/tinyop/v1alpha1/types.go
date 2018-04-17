@@ -30,4 +30,7 @@ type EchoServerSpec struct {
 
 	// Replicas is the number of EchoServer replicas k8s should maintain
 	Replicas int32 `json:"replicas"`
+
+	// ImagePullSecretName is the secret name that should be used to pull images
+	ImagePullSecretName string `json:"imagePullSecretName"`
 }

@@ -18,6 +18,7 @@ import (
 	clientset "github.com/objectrocket/tiny-operator/pkg/client/clientset/versioned"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"k8s.io/api/apps/v1beta1"
 	"k8s.io/api/core/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -145,9 +146,14 @@ func initOperator(doneChan chan struct{}, wg *sync.WaitGroup) error {
 	wg.Add(1)
 	watchEchoEvents(doneChan, wg, agent)
 
+	wg.Add(1)
+	watchPodEvents(doneChan, wg, agent)
+
 	return nil
 }
 
+// Echo server object event stuff
+// monitorEchoEvents
 func monitorEchoEvents(stopchan chan struct{}, a *Agent) (<-chan *tinyopv1.EchoServer, <-chan error) {
 	events := make(chan *tinyopv1.EchoServer)
 	errc := make(chan error, 1)
@@ -207,6 +213,116 @@ func watchEchoEvents(done chan struct{}, wg *sync.WaitGroup, a *Agent) {
 	}()
 }
 
+func handleEchoEvent(e *tinyopv1.EchoServer, a *Agent) error {
+	eLock.Lock()
+	defer eLock.Unlock()
+	switch {
+	case e.Type == "ADDED" || e.Type == "MODIFIED":
+		return onApplyEcho(e, a)
+	case e.Type == "DELETED":
+		return onDeleteEcho(e, a)
+	}
+	return nil
+}
+
+func onApplyEcho(e *tinyopv1.EchoServer, a *Agent) error {
+	log.Printf("Received create event with object: %#v", e)
+	return doApplyEchoState(e, a)
+}
+
+func onDeleteEcho(e *tinyopv1.EchoServer, a *Agent) error {
+	log.Printf("Received delete event with object: %#v", e)
+	return nil
+}
+
+// Pod event stuff
+func monitorPods(stopchan chan struct{}, a *Agent) (<-chan *v1.Pod, <-chan error) {
+	events := make(chan *v1.Pod)
+	errc := make(chan error, 1)
+
+	podListWatcher := cache.NewListWatchFromClient(a.kclient.Core().RESTClient(), "pods", v1.NamespaceAll, fields.Everything())
+
+	createAddHandler := func(obj interface{}) {
+		event := obj.(*v1.Pod)
+		for k, v := range event.ObjectMeta.Labels {
+			if k == "component" && v == "echo-server" {
+				event.ObjectMeta.Labels["es-event"] = "CREATE"
+				events <- event
+				break
+			}
+		}
+	}
+
+	updateHandler := func(old interface{}, obj interface{}) {
+		event := obj.(*v1.Pod)
+		for k, v := range event.ObjectMeta.Labels {
+			if k == "component" && v == "echo-server" {
+				event.ObjectMeta.Labels["es-event"] = "UPDATE"
+				events <- event
+				break
+			}
+		}
+	}
+
+	deleteHandler := func(obj interface{}) {
+		event := obj.(*v1.Pod)
+		for k, v := range event.ObjectMeta.Labels {
+			if k == "component" && v == "echo-server" {
+				event.ObjectMeta.Labels["es-event"] = "DELETE"
+				events <- event
+				break
+			}
+		}
+	}
+
+	_, controller := cache.NewIndexerInformer(podListWatcher, &v1.Pod{}, 0, cache.ResourceEventHandlerFuncs{
+		AddFunc:    createAddHandler,
+		UpdateFunc: updateHandler,
+		DeleteFunc: deleteHandler,
+	}, cache.Indexers{})
+
+	go controller.Run(stopchan)
+
+	return events, errc
+}
+
+func watchPodEvents(done chan struct{}, wg *sync.WaitGroup, a *Agent) {
+	events, watchErrs := monitorPods(done, a)
+	go func() {
+		for {
+			select {
+			case event := <-events:
+				err := handlePodEvent(event, a)
+				if err != nil {
+					log.Fatal(err)
+				}
+			case err := <-watchErrs:
+				log.Fatal(err)
+			case <-done:
+				wg.Done()
+				log.Print("Stopped pod event watcher.")
+				return
+			}
+		}
+	}()
+}
+
+func handlePodEvent(p *v1.Pod, a *Agent) error {
+	eLock.Lock()
+	defer eLock.Unlock()
+	switch {
+	case true:
+		return onApplyPod(p, a)
+	}
+	return nil
+}
+
+func onApplyPod(p *v1.Pod, a *Agent) error {
+	log.Printf("Received pod apply event with object: %#v", p.ObjectMeta.Labels)
+	return nil
+}
+
+// Other functions
 func createCRD(kubeExt apiextensionsclient.Interface) error {
 	crd, err := kubeExt.ApiextensionsV1beta1().CustomResourceDefinitions().Get(tinyop.Name, metav1.GetOptions{})
 	if err != nil {
@@ -270,24 +386,70 @@ func createCRD(kubeExt apiextensionsclient.Interface) error {
 	return nil
 }
 
-func handleEchoEvent(e *tinyopv1.EchoServer, a *Agent) error {
-	eLock.Lock()
-	defer eLock.Unlock()
-	switch {
-	case e.Type == "ADDED" || e.Type == "MODIFIED":
-		return onApplyEcho(e, a)
-	case e.Type == "DELETED":
-		return onDeleteEcho(e, a)
+func doApplyEchoState(e *tinyopv1.EchoServer, a *Agent) error {
+	deployment, err := a.kclient.ExtensionsV1beta1().Deployments(e.ObjectMeta.Namespace).Get(e.Name, metav1.GetOptions{})
+
+	if len(deployment.Name) == 0 {
+		log.Printf("Deployment %s not found, creating...", e.ObjectMeta.Name)
+
+		deployment := &v1beta1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: e.ObjectMeta.Name, Labels: map[string]string{"component": "echo-server", "role": "es-replica", "name": e.ObjectMeta.Name}},
+			Spec: v1beta1.DeploymentSpec{
+				Replicas: &e.Spec.Replicas,
+				Template: v1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"component": "echo-server", "role": "es-replica", "name": e.ObjectMeta.Name},
+					},
+					Spec: v1.PodSpec{
+						Containers: []v1.Container{
+							v1.Container{
+								Name:            e.ObjectMeta.Name,
+								SecurityContext: &v1.SecurityContext{Privileged: &[]bool{true}[0], Capabilities: &v1.Capabilities{Add: []v1.Capability{"IPC_LOCK"}}},
+								Image:           e.Spec.Image,
+								ImagePullPolicy: "IfNotPresent",
+								Env: []v1.EnvVar{
+									v1.EnvVar{
+										Name:  "CHARLIE_BROWN",
+										Value: "Peanuts",
+									},
+								},
+								Ports: []v1.ContainerPort{
+									{
+										Name:          "echo-srv-port",
+										ContainerPort: 8200,
+										Protocol:      v1.ProtocolTCP,
+									},
+								},
+							},
+						},
+						ImagePullSecrets: []v1.LocalObjectReference{
+							{Name: e.Spec.ImagePullSecretName},
+						},
+					},
+				},
+			},
+		}
+
+		_, err := a.kclient.AppsV1beta1().Deployments(e.ObjectMeta.Namespace).Create(deployment)
+
+		if err != nil {
+			log.Printf("Could not create echo server deployment: ", err)
+			return err
+		}
+	} else {
+		if err != nil {
+			log.Printf("Count not get echo server deployment: ", err)
+			return err
+		}
+		//scale replicas?
+		if deployment.Spec.Replicas != &e.Spec.Replicas {
+			deployment.Spec.Replicas = &e.Spec.Replicas
+
+			if _, err := a.kclient.ExtensionsV1beta1().Deployments(e.ObjectMeta.Namespace).Update(deployment); err != nil {
+				log.Printf("Could not scale deployment: ", err)
+				return err
+			}
+		}
 	}
-	return nil
-}
-
-func onApplyEcho(e *tinyopv1.EchoServer, a *Agent) error {
-	log.Printf("Received create event with object: %#v", e)
-	return nil
-}
-
-func onDeleteEcho(e *tinyopv1.EchoServer, a *Agent) error {
-	log.Printf("Received delete event with object: %#v", e)
 	return nil
 }
