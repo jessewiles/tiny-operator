@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -227,6 +228,7 @@ func handleEchoEvent(e *tinyopv1.EchoServer, a *Agent) error {
 
 func onApplyEcho(e *tinyopv1.EchoServer, a *Agent) error {
 	log.Printf("Received create event with object: %#v", e)
+	makeNodeTypeService(e.ObjectMeta.Name, e.ObjectMeta.Namespace, "http", a)
 	return doApplyEchoState(e, a)
 }
 
@@ -451,5 +453,45 @@ func doApplyEchoState(e *tinyopv1.EchoServer, a *Agent) error {
 			}
 		}
 	}
+	return nil
+}
+
+func makeNodeTypeService(clusterName, namespace, role string, a *Agent) error {
+	fullClientServiceName := fmt.Sprintf("%s-%s", clusterName, namespace)
+	_, err := a.kclient.CoreV1().Services(namespace).Get(fullClientServiceName, metav1.GetOptions{})
+
+	if apierrors.IsNotFound(err) {
+		log.Print("%s not found, creating echo server service...")
+
+		clientSvc := &v1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   fullClientServiceName,
+				Labels: map[string]string{"component": "es-service", "role": role},
+			},
+			Spec: v1.ServiceSpec{
+				Type:     v1.ServiceTypeNodePort,
+				Selector: map[string]string{"component": "es-service", "role": role},
+				Ports: []v1.ServicePort{
+					{
+						Name:       "http",
+						Port:       8000,
+						Protocol:   "TCP",
+						TargetPort: intstr.FromInt(8000),
+						NodePort:   30800,
+					},
+				},
+			},
+		}
+
+		if _, err := a.kclient.CoreV1().Services(namespace).Create(clientSvc); err != nil {
+			log.Printf("Could not create node service: ", err)
+			return err
+		}
+
+	} else if err != nil {
+		log.Printf("Could not get node service: ", err)
+		return err
+	}
+
 	return nil
 }
